@@ -1,3 +1,6 @@
 fastapi
 uvicorn
 PyQt5
+pydantic
+python-multipart
+pillow
