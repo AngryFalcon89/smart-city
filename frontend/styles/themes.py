@@ -1,1 +1,1 @@
-# UI theme settings
+# UI themes

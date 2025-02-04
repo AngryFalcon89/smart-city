@@ -1,1 +1,1 @@
-# Configuration settings (API keys, DB connection, etc.)
+# Configuration settings

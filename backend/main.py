@@ -1,1 +1,1 @@
-# Entry point for FastAPI backend
+# FastAPI main server entry point

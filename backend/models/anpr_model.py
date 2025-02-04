@@ -1,1 +1,1 @@
-# ANPR database model
+# ANPR model
