@@ -1,1 +1,1 @@
-# Main PyQt5 dashboard
+# PyQt5 dashboard entry point
