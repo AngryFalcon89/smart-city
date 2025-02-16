@@ -1,21 +1,14 @@
-import io
-from fastapi import UploadFile, HTTPException
+from backend.models.anpr_model import ANPRData, ANPRResponse
+from backend.config import settings
+from pymongo import MongoClient
+from datetime import datetime
 
-async def process_anpr_data(plate_number: str, image: UploadFile):
-    # Read the image file content
-    image_content = await image.read()
+client = MongoClient(settings.DATABASE_URL)
+db = client.smart_city_db
+anpr_collection = db.anpr_data
 
-    # Check if the image content is empty
-    if len(image_content) == 0:
-        raise HTTPException(status_code=400, detail="Empty image file")
-    
-    # Save the image directly as a raw file
-    file_path = f"backend/uploaded_images/{plate_number}.jpg"
-    with open(file_path, "wb") as f:
-        f.write(image_content)
-    
-    return {
-        "plate_number": plate_number,
-        "filename": image.filename,
-        "message": "Image saved successfully"
-    }
+def save_anpr_data(data: ANPRData):
+    data_dict = data.dict()
+    data_dict["timestamp"] = datetime.now()
+    result = anpr_collection.insert_one(data_dict)
+    return ANPRResponse(id=str(result.inserted_id), **data_dict)
