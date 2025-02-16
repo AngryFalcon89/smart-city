@@ -111,6 +111,8 @@ uvicorn backend.main:app --reload
 Access the API at `http://localhost:8000`.  
 
 ---
+#### Data Input at End-Points 
+![](img/dataInput%20diagram.png)  
 
 ## API Usage  
 ### ANPR Module  
@@ -184,7 +186,7 @@ Access the API at `http://localhost:8000`.
    - High recognition accuracy (≥95%).  
 
 #### System Architecture  
-![](media/image2.jpeg)  
+![](img/systemarchitecture.png)  
 
 ---
 
@@ -205,7 +207,7 @@ Access the API at `http://localhost:8000`.
    - Compare live images with stored templates.  
 
 #### Use Case Diagram  
-![](media/image3.jpeg)  
+![](img/use.png)  
 
 ---
 
@@ -225,9 +227,9 @@ Access the API at `http://localhost:8000`.
 
 #### UML Diagrams  
 - **Class Diagram**:  
-  ![](media/image4.jpeg)  
+  ![](img/class.png)  
 - **Use Case Diagram**:  
-  ![](media/image5.jpeg)  
+  ![](img/usecase.png)  
 
 ---
 
@@ -248,7 +250,7 @@ Access the API at `http://localhost:8000`.
 - **Security**: JWT + OAuth 2.0  
 
 #### Architecture  
-![](media/image6.jpeg)  
+![](img/classdiagram.png)  
 
 ---
 
