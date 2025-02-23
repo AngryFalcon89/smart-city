@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Face Recognition Sender</title>
+</head>
+<body>
+    <h2>Face Recognition WebSocket Sender</h2>
+    <button onclick="startStream()">Start Streaming</button>
+    <button onclick="stopStream()" disabled>Stop Streaming</button>
+    
+    <script>
+        let ws;
+        let stream;
+        let video;
+        let canvas;
+        let context;
+        let isStreaming = false;
+        let intervalId;
+
+        // Dummy face recognition data
+        const dummyData = [
+            { user_name: "John Doe", phone_number: "123-456-7890", is_suspected: false, suspicion_message: null },
+            { user_name: "Jane Smith", phone_number: "987-654-3210", is_suspected: true, suspicion_message: "Suspected person" },
+            { user_name: "Alice Johnson", phone_number: "555-555-5555", is_suspected: false, suspicion_message: null },
+        ];
+
+        async function startStream() {
+            if (isStreaming) return;
+
+            ws = new WebSocket("ws://localhost:8000/api/face-recognition/ws/face?role=sender");
+            stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            video = document.createElement('video');
+            video.srcObject = stream;
+            await video.play();
+
+            canvas = document.createElement('canvas');
+            context = canvas.getContext('2d');
+
+            isStreaming = true;
+            document.querySelector('button[onclick="startStream()"]').disabled = true;
+            document.querySelector('button[onclick="stopStream()"]').disabled = false;
+
+            // Start sending video frames
+            captureFrame();
+
+            // Start sending dummy face recognition data every 5 seconds
+            intervalId = setInterval(sendDummyData, 5000);
+        }
+
+        function stopStream() {
+            if (!isStreaming) return;
+
+            isStreaming = false;
+            document.querySelector('button[onclick="startStream()"]').disabled = false;
+            document.querySelector('button[onclick="stopStream()"]').disabled = true;
+
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+            if (ws) {
+                ws.close();
+            }
+            if (intervalId) {
+                clearInterval(intervalId);
+            }
+        }
+
+        function sendDummyData() {
+            if (!isStreaming) return;
+
+            // Pick random dummy data
+            const randomIndex = Math.floor(Math.random() * dummyData.length);
+            const data = {
+                type: "face",  // Add the type field
+                ...dummyData[randomIndex],  // Spread the dummy data
+            };
+
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(data));
+                console.log("Sent dummy data:", data);
+            }
+        }
+
+        function captureFrame() {
+            if (!isStreaming) return;
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0);
+            const frame = canvas.toDataURL('image/jpeg');  // Convert frame to base64
+
+            // Send frame to the backend
+            const frameMessage = {
+                type: "frame",
+                data: frame,
+                timestamp: new Date().toISOString()
+            };
+
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(frameMessage));
+            }
+
+            requestAnimationFrame(captureFrame);
+        }
+    </script>
+</body>
+</html>

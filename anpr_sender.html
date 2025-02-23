@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Face Recognition Sender</title>
+</head>
+<body>
+    <h2>Face Recognition WebSocket Sender</h2>
+
+    <button onclick="startStream()">Start Streaming</button>
+    <button onclick="stopStream()" disabled>Stop Streaming</button>
+
+    <script>
+        let ws;
+        let stream;
+        let video;
+        let canvas;
+        let context;
+        let isStreaming = false;
+
+        async function startStream() {
+            if (isStreaming) return;
+
+            try {
+                ws = new WebSocket("ws://localhost:8000/api/face-recognition/ws/face?role=sender");
+
+                ws.onopen = function () {
+                    console.log("WebSocket connected (Sender)");
+                    startCameraStream();
+                };
+
+                ws.onclose = function (event) {
+                    console.warn("WebSocket closed:", event);
+                    stopStream();
+                };
+
+                ws.onerror = function (error) {
+                    console.error("WebSocket error:", error);
+                };
+
+            } catch (error) {
+                console.error("Failed to connect WebSocket:", error);
+            }
+        }
+
+        async function startCameraStream() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video = document.createElement('video');
+                video.srcObject = stream;
+                await video.play();
+
+                canvas = document.createElement('canvas');
+                context = canvas.getContext('2d');
+
+                isStreaming = true;
+                document.querySelector('button[onclick="startStream()"]').disabled = true;
+                document.querySelector('button[onclick="stopStream()"]').disabled = false;
+
+                captureFrame();
+            } catch (error) {
+                console.error("Error accessing camera:", error);
+            }
+        }
+
+        function stopStream() {
+            if (!isStreaming) return;
+
+            isStreaming = false;
+            document.querySelector('button[onclick="startStream()"]').disabled = false;
+            document.querySelector('button[onclick="stopStream()"]').disabled = true;
+
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+            if (ws) {
+                ws.close();
+            }
+
+            console.log("Streaming stopped");
+        }
+
+        function captureFrame() {
+            if (!isStreaming || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0);
+            const frame = canvas.toDataURL('image/jpeg');  // Convert frame to base64
+
+            // Dummy Data for Person Details
+            const data = {
+                type: 'frame',
+                data: frame,
+                timestamp: new Date().toISOString(),
+                user_name: "John Doe",
+                phone_number: "+1 123-456-7890",
+                is_suspected: true,
+                suspicion_message: "Wanted for questioning in an ongoing case."
+            };
+
+            try {
+                ws.send(JSON.stringify(data));
+            } catch (error) {
+                console.error("Failed to send frame:", error);
+            }
+
+            requestAnimationFrame(captureFrame);
+        }
+    </script>
+</body>
+</html>

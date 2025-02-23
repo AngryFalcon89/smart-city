@@ -1,54 +1,112 @@
-import os
-import uuid
 import logging
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-from backend.services.crash_service import save_crash_data
-from backend.models.crash_model import CrashData, CrashResponse
+from fastapi import APIRouter, WebSocket
+from fastapi.responses import HTMLResponse
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
-# Ensure the uploads directory exists
-os.makedirs("uploads/crash", exist_ok=True)
+# Global variables to track connections
+sender_websocket = None
+viewer_websockets = []
 
-@router.post("/upload", response_model=CrashResponse)
-async def upload_crash_data(
-    location: str = Form(...),
-    video: UploadFile = File(...)
-):
-    logging.info("==== Received /upload request for crash detection ====")
-    logging.info(f"Video filename: {video.filename}")
-    logging.info(f"Video content type: {video.content_type}")
+# HTML page for viewer
+viewer_html = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Crash Detection Viewer</title>
+    <style>
+        #video-container {
+            position: relative;
+            width: 640px;
+            height: 480px;
+        }
+        #video-frame {
+            width: 100%;
+            height: 100%;
+        }
+        #alerts {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(255, 0, 0, 0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Crash Detection Viewer</h1>
+    <div id="video-container">
+        <img id="video-frame" />
+        <div id="alerts">CRASH DETECTED!</div>
+    </div>
+    <script>
+        const ws = new WebSocket("ws://localhost:8000/ws/crash-detection?role=viewer");
+        const videoFrame = document.getElementById('video-frame');
+        const alertsDiv = document.getElementById('alerts');
+        
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            if (data.type === 'frame') {
+                videoFrame.src = data.data;  // Set the image source to the base64 frame
+            } else if (data.type === 'alert') {
+                alertsDiv.style.display = 'block';
+                setTimeout(() => {
+                    alertsDiv.style.display = 'none';
+                }, 2000);
+            }
+        };
+    </script>
+</body>
+</html>
+"""
 
-    # Define video_path early so it's available in the exception block
-    unique_filename = f"{uuid.uuid4()}_{video.filename}"
-    video_path = os.path.join("uploads/crash", unique_filename)
-
+@router.websocket("/ws/crash-detection")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    role = websocket.query_params.get("role", "viewer")
+    global sender_websocket, viewer_websockets
+    
     try:
-        # Read the entire video file into memory
-        video_bytes = await video.read()
-        if not video_bytes:
-            raise HTTPException(status_code=400, detail="Uploaded video is empty.")
-
-        # Log the first few bytes for debugging
-        logging.info(f"First 20 bytes of video: {video_bytes[:20]}")
-
-        # Save the video to the uploads directory
-        with open(video_path, "wb") as buffer:
-            buffer.write(video_bytes)
-
-        logging.info(f"Video saved successfully at: {video_path}")
-
-        # Save the crash data
-        crash_data = CrashData(video_url=video_path, location=location)
-        return save_crash_data(crash_data)
-
-    except HTTPException as http_ex:
-        # If an HTTPException was raised (e.g., invalid video), re-raise it directly
-        logging.error(f"HTTPException: {http_ex.detail}")
-        raise http_ex
+        if role == "sender":
+            if sender_websocket:
+                await websocket.close(code=4001)
+                return
+            sender_websocket = websocket
+            logger.info("Sender connected")
+            
+            while True:
+                data = await websocket.receive_text()
+                logger.info(f"Received data from sender: {data}")  # Log received message
+                
+                # Broadcast to all viewers
+                for viewer in viewer_websockets.copy():
+                    try:
+                        await viewer.send_text(data)
+                    except:
+                        viewer_websockets.remove(viewer)
+                        logger.error("Viewer disconnected unexpectedly")
+        else:
+            viewer_websockets.append(websocket)
+            logger.info("New viewer connected (total: %d)", len(viewer_websockets))
+            while True:
+                await websocket.receive_text()  # Keep connection alive
+                
     except Exception as e:
-        logging.error(f"Error processing video: {e}")
-        # Remove the file if it was partially written
-        if os.path.exists(video_path):
-            os.remove(video_path)
-        raise HTTPException(status_code=500, detail=f"Error processing video: {str(e)}")
+        logger.error(f"WebSocket error: {str(e)}")
+    finally:
+        if role == "sender":
+            sender_websocket = None
+            logger.info("Sender disconnected")
+        else:
+            viewer_websockets.remove(websocket)
+            logger.info("Viewer disconnected (remaining: %d)", len(viewer_websockets))
+        await websocket.close()
+
+
+@router.get("/viewer")
+async def viewer_page():
+    return HTMLResponse(viewer_html)

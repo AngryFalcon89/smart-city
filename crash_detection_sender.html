@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Crash Detection Sender</title>
+</head>
+<body>
+    <button onclick="startStream()">Start Streaming</button>
+    <button onclick="stopStream()">Stop Streaming</button>
+    <script>
+        let ws = null;
+        let stream = null;
+        let video = null;
+        let animationFrameId = null;
+
+        async function startStream() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                console.log("Streaming is already running.");
+                return;
+            }
+
+            ws = new WebSocket("ws://localhost:8000/ws/crash-detection?role=sender");
+            stream = await navigator.mediaDevices.getUserMedia({ video: true });
+
+            video = document.createElement('video');
+            video.srcObject = stream;
+            await video.play();
+
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+
+            function captureFrame() {
+                if (!video || !stream || !ws || ws.readyState !== WebSocket.OPEN) {
+                    return;
+                }
+
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                context.drawImage(video, 0, 0);
+                const frame = canvas.toDataURL('image/jpeg');
+
+                const message = {
+                    type: 'frame',
+                    data: frame,
+                    timestamp: new Date().toISOString()
+                };
+                ws.send(JSON.stringify(message));
+
+                // Simulated crash detection logic (replace with real detection)
+                if (Math.random() < 0.02) {  // Simulate a crash occurring with 2% probability
+                    console.warn("⚠️ Crash detected! Sending alert...");
+                    const alertMessage = {
+                        type: 'alert',
+                        message: 'Crash detected!',
+                        timestamp: new Date().toISOString()
+                    };
+                    ws.send(JSON.stringify(alertMessage)); // Send crash alert over WebSocket
+                }
+
+                animationFrameId = requestAnimationFrame(captureFrame);
+            }
+
+            captureFrame();
+        }
+
+        function stopStream() {
+            if (ws) {
+                ws.close();
+                ws = null;
+                console.log("WebSocket closed.");
+            }
+
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+                console.log("Camera stream stopped.");
+            }
+
+            if (video) {
+                video.pause();
+                video.srcObject = null;
+                video = null;
+            }
+
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+        }
+    </script>
+</body>
+</html>

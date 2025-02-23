@@ -1,66 +1,114 @@
-import os
-import uuid
 import logging
-from io import BytesIO
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Request
-from PIL import Image, UnidentifiedImageError
-from backend.services.anpr_service import save_anpr_data
-from backend.models.anpr_model import ANPRData, ANPRResponse
+from fastapi import APIRouter, WebSocket
+from fastapi.responses import HTMLResponse
+from fastapi.websockets import WebSocketDisconnect
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
-# Ensure the uploads directory exists
-os.makedirs("uploads", exist_ok=True)
+# Global variables to track WebSocket connections
+sender_websocket = None
+viewer_websockets = []
 
-@router.post("/upload", response_model=ANPRResponse)
-async def upload_anpr_data(
-    request: Request,
-    number_plate: str = Form(...),
-    image: UploadFile = File(...)
-):
-    logging.info("==== Received /upload request with PIL processing ====")
-    logging.info(f"Image filename: {image.filename}")
-    logging.info(f"Image content type: {image.content_type}")
+# HTML page for the viewer
+viewer_html = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ANPR Viewer</title>
+    <style>
+        #video-container {
+            position: relative;
+            width: 640px;
+            height: 480px;
+        }
+        #video-frame {
+            width: 100%;
+            height: 100%;
+        }
+        #plate-container {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h2>ANPR Viewer</h2>
+    <div id="video-container">
+        <img id="video-frame" />
+    </div>
+    <div id="plate-container">
+        <h3>Detected Number Plate:</h3>
+        <p id="number-plate">Waiting for data...</p>
+    </div>
+    <script>
+        const ws = new WebSocket("ws://localhost:8000/api/anpr/ws/anpr?role=viewer");
+        const videoFrame = document.getElementById("video-frame");
+        const plateDisplay = document.getElementById("number-plate");
 
-    # Define image_path early so it's available in the exception block
-    unique_filename = f"{uuid.uuid4()}_{image.filename}"
-    image_path = os.path.join("uploads/anpr", unique_filename)
+        ws.onopen = function() {
+            console.log("WebSocket connected successfully");
+        };
+
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            if (data.type === 'frame') {
+                videoFrame.src = data.data;  // Update video frame
+            } else if (data.type === 'plate') {
+                plateDisplay.textContent = data.plate;  // Update number plate display
+            }
+        };
+
+        ws.onerror = function(event) {
+            console.error("WebSocket error:", event);
+        };
+
+        ws.onclose = function() {
+            console.warn("WebSocket connection closed");
+        };
+    </script>
+</body>
+</html>
+"""
+
+@router.websocket("/ws/anpr")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    role = websocket.query_params.get("role", "viewer")
+    global sender_websocket, viewer_websockets
 
     try:
-        # Read the entire file into memory
-        image_bytes = await image.read()
-        if not image_bytes:
-            raise HTTPException(status_code=400, detail="Uploaded file is empty.")
-        
-        # Log the first few bytes for debugging
-        logging.info(f"First 20 bytes of file: {image_bytes[:20]}")
+        if role == "sender":
+            if sender_websocket:
+                await websocket.close(code=4001)
+                return
+            sender_websocket = websocket
+            logger.info("ANPR Sender connected")
 
-        # Create a BytesIO stream from the bytes
-        image_stream = BytesIO(image_bytes)
+            while True:
+                data = await websocket.receive_text()
+                for viewer in viewer_websockets.copy():
+                    try:
+                        await viewer.send_text(data)
+                    except WebSocketDisconnect:
+                        viewer_websockets.remove(viewer)
+                        logger.error("Viewer disconnected unexpectedly")
 
-        # Attempt to open the image with PIL
-        try:
-            pil_image = Image.open(image_stream)
-            pil_image.load()  # Force loading the image to confirm it's valid
-        except UnidentifiedImageError as pil_err:
-            logging.error(f"PIL failed to open image: {pil_err}")
-            raise HTTPException(status_code=400, detail="Uploaded file is not a valid image.")
+        else:
+            viewer_websockets.append(websocket)
+            logger.info(f"New ANPR Viewer connected (total: {len(viewer_websockets)})")
+            while True:
+                await websocket.receive_text()
 
-        # Save the image using PIL (which properly handles image formats)
-        pil_image.save(image_path)
-        logging.info(f"Image saved successfully at: {image_path}")
+    except WebSocketDisconnect:
+        if role == "sender":
+            sender_websocket = None
+            logger.info("ANPR Sender disconnected")
+        else:
+            if websocket in viewer_websockets:
+                viewer_websockets.remove(websocket)
+            logger.info(f"ANPR Viewer disconnected (remaining: {len(viewer_websockets)})")
+        await websocket.close()
 
-        # Save the ANPR data
-        anpr_data = ANPRData(number_plate=number_plate, image_url=image_path)
-        return save_anpr_data(anpr_data)
-
-    except HTTPException as http_ex:
-        # If an HTTPException was raised (e.g., invalid image), re-raise it directly
-        logging.error(f"HTTPException: {http_ex.detail}")
-        raise http_ex
-    except Exception as e:
-        logging.error(f"Error processing image: {e}")
-        # Remove the file if it was partially written
-        if os.path.exists(image_path):
-            os.remove(image_path)
-        raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
+@router.get("/anpr-viewer")
+async def anpr_viewer_page():
+    return HTMLResponse(viewer_html)

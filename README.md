@@ -21,11 +21,6 @@ Here’s the **README.md** with the **complete SRS** integrated into it. I’ve 
 ```
 smart_city_project/
 ├── backend/
-│   ├── models/
-│   │   ├── anpr_model.py          # Schema/model for ANPR data
-│   │   ├── crash_model.py         # Schema/model for crash detection data
-│   │   └── face_recognition_model.py  # Schema/model for face recognition data
-│   │
 │   ├── routes/
 │   │   ├── anpr_routes.py         # Endpoints for the ANPR module
 │   │   ├── crash_routes.py        # Endpoints for the Crash Detection module
