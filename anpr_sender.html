@@ -1,11 +1,10 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Face Recognition Sender</title>
+    <title>ANPR Sender</title>
 </head>
 <body>
-    <h2>Face Recognition WebSocket Sender</h2>
-
+    <h2>ANPR Sender</h2>
     <button onclick="startStream()">Start Streaming</button>
     <button onclick="stopStream()" disabled>Stop Streaming</button>
 
@@ -21,7 +20,7 @@
             if (isStreaming) return;
 
             try {
-                ws = new WebSocket("ws://localhost:8000/api/face-recognition/ws/face?role=sender");
+                ws = new WebSocket("ws://localhost:8000/api/anpr/ws/anpr?role=sender");
 
                 ws.onopen = function () {
                     console.log("WebSocket connected (Sender)");
@@ -87,19 +86,24 @@
             context.drawImage(video, 0, 0);
             const frame = canvas.toDataURL('image/jpeg');  // Convert frame to base64
 
-            // Dummy Data for Person Details
-            const data = {
+            // Dummy ANPR logic (replace with real detection)
+            const numberPlate = "ABC123";  
+
+            // Send frame and number plate to the backend
+            const frameMessage = {
                 type: 'frame',
                 data: frame,
-                timestamp: new Date().toISOString(),
-                user_name: "John Doe",
-                phone_number: "+1 123-456-7890",
-                is_suspected: true,
-                suspicion_message: "Wanted for questioning in an ongoing case."
+                timestamp: new Date().toISOString()
+            };
+            const plateMessage = {
+                type: 'plate',
+                plate: numberPlate,
+                timestamp: new Date().toISOString()
             };
 
             try {
-                ws.send(JSON.stringify(data));
+                ws.send(JSON.stringify(frameMessage));
+                ws.send(JSON.stringify(plateMessage));
             } catch (error) {
                 console.error("Failed to send frame:", error);
             }
